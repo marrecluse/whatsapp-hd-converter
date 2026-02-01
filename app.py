@@ -19,22 +19,28 @@ ALLOWED_EXTENSIONS = {'mp4', 'mov', 'avi', 'mkv', 'webm', 'm4v'}
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
+# Check if FFmpeg is available
+def check_ffmpeg():
+    """Check if FFmpeg is installed and accessible"""
+    try:
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True, timeout=5)
+        return result.returncode == 0
+    except:
+        return False
+
+FFMPEG_AVAILABLE = check_ffmpeg()
+
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def get_video_info(filepath):
-    """Get video metadata using ffprobe"""
-    cmd = [
-        'ffprobe',
-        '-v', 'quiet',
-        '-print_format', 'json',
-        '-show_format',
-        '-show_streams',
-        filepath
-    ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    import json
-    return json.loads(result.stdout)
+    """Get video metadata using ffprobe - simplified version"""
+    # Skip ffprobe check - just verify file exists and is readable
+    if not os.path.exists(filepath):
+        raise Exception("Video file not found")
+    if os.path.getsize(filepath) == 0:
+        raise Exception("Video file is empty")
+    return {"valid": True}
 
 def optimize_for_whatsapp(input_path, output_path):
     """
@@ -90,6 +96,7 @@ def index():
         'status': 'online',
         'service': 'WhatsApp HD Video Converter API',
         'version': '1.0',
+        'ffmpeg_available': FFMPEG_AVAILABLE,
         'endpoints': {
             '/convert': 'POST - Upload video for conversion',
             '/health': 'GET - Check API health'
@@ -109,12 +116,19 @@ def index():
 def health():
     return jsonify({
         'status': 'healthy',
-        'timestamp': datetime.now().isoformat()
+        'timestamp': datetime.now().isoformat(),
+        'ffmpeg_available': FFMPEG_AVAILABLE
     })
 
 @app.route('/convert', methods=['POST'])
 def convert_video():
     try:
+        # Check if FFmpeg is available
+        if not FFMPEG_AVAILABLE:
+            return jsonify({
+                'error': 'FFmpeg is not installed or not accessible on the server. Please contact the administrator.'
+            }), 500
+        
         # Cleanup old files
         cleanup_old_files()
         
